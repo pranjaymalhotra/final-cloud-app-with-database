@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 # <HINT> Import any new Models here
-from .models import Course, Enrollment,Submission,Choice,Question
+from .models import Course, Enrollment, Question, Choice, Submission,Lesson
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
@@ -63,6 +63,7 @@ def logout_request(request):
 def check_if_enrolled(user, course):
     is_enrolled = False
     if user.id is not None:
+        # Check if user enrolled
         num_results = Enrollment.objects.filter(user=user, course=course).count()
         if num_results > 0:
             is_enrolled = True
@@ -94,42 +95,52 @@ def enroll(request, course_id):
 
     is_enrolled = check_if_enrolled(user, course)
     if not is_enrolled and user.is_authenticated:
+        # Create an enrollment
         Enrollment.objects.create(user=user, course=course, mode='honor')
         course.total_enrollment += 1
         course.save()
 
-    return HttpResponseRedirect(reverse(viewname='onlinecourse:course_details', args=(course.id)))
+    return HttpResponseRedirect(reverse(viewname='onlinecourse:course_details', args=(course.id,)))
 
 def submit(request, course_id):
-    course = get_object_or_404(Course, pk=course_id)
-    user=request.user
-    enrollment = Enrollment.objects.get(user, course=course)
+    user = request.user
+    course = Course.objects.get(pk=course_id)
+    enrollment = Enrollment.objects.get(user=user, course=course)
+    submitted_anwsers = extract_answers(request)
     submission = Submission.objects.create(enrollment=enrollment)
-    choices = extract_answers(request)
-    submission.choices.set(choices)
-    submission_id = submission.id
-    return HttpResponseRedirect(reverse(viewname='onlinecourse:show_exam_result', args=(course_id, submission_id)))
+    submission.chocies.set(submitted_anwsers)
+    print(submission)
+    return  HttpResponseRedirect(reverse(viewname='onlinecourse:result', args=(course_id, submission.chocies.first().question.lesson.pk, submission.pk)))
+
 def extract_answers(request):
-    submitted_anwsers = []
-    for key in request.POST:
-        if key.startswith('choice'):
-            value = request.POST[key]
-            choice_id = int(value)
-            submitted_anwsers.append(choice_id)
-    return submitted_anwsers
+   submitted_anwsers = []
+   for key in request.POST:
+       if key.startswith('choice'):
+           value = request.POST[key]
+           choice_id = int(value)
+           submitted_anwsers.append(choice_id)
+   return submitted_anwsers
 
-def show_exam_result(request, course_id, submission_id):
-    contex = {}
-    course = get_object_or_404(Course, pk=course_id)
-    submission = Submission.objects.get(id=submission_id)
-    choices = submission.choices.all()
-    total_score = 0
-    for choice in choices:
-        if choice.is_correct:
-            total_score += choice.question.grade
-    context['course'] = course
-    context['grade'] = total_score
-    context['choices'] = choices
-    return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
+def show_exam_result(request, course_id, lesson_id, submission_id):
+    from django.db.models import Sum
+    course = Course.objects.get(pk=course_id)
+    submission = Submission.objects.get(pk=submission_id)
+    selected_choices = submission.chocies.all()
 
+    lesson = Lesson.objects.get(pk=lesson_id)
+    questions = lesson.question_set.all()
+    total_mark = round(lesson.question_set.all().aggregate(Sum("grade"))["grade__sum"])
+    grade = 0
+    for question in questions:
+        if question.is_get_score(selected_choices):
+            grade += question.grade
 
+    ctx = {
+        'grade': round(grade),
+        'total_mark': total_mark,
+        'questions': questions,
+        'lesson': lesson,
+        'selected_choices': selected_choices,
+    }
+
+    return render(request , 'onlinecourse/exam_result_bootstrap.html' , ctx)
