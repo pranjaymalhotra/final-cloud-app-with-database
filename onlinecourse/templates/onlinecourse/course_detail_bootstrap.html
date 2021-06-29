@@ -54,7 +54,7 @@
             <button data-toggle="collapse" data-target="#exam_{{lesson.pk}}" class=" btn-primary btn-block"
                 style="background-color:darkcyan">Start Exam</button>
             <div id="exam_{{lesson.pk}}" class="collapse">
-                <form id="questionform" action="{% url "onlinecourse:submit" course.pk%}" method="post">
+                <form id="questionform" action={% url "onlinecourse:submit" course.pk%} method="post">
                     {% csrf_token %}
 
                     {% for question in lesson.question_set.all %}
